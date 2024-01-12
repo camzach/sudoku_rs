@@ -5,7 +5,8 @@ enum Cell {
 }
 impl Cell {
     fn new(n: Option<usize>) -> Cell {
-        n.map(Cell::Solved).unwrap_or(Cell::Unsolved([true; 9]))
+        n.map(|n| Cell::Solved(n - 1))
+            .unwrap_or(Cell::Unsolved([true; 9]))
     }
     fn row(ns: [Option<usize>; 9]) -> [Cell; 9] {
         ns.map(Cell::new)
@@ -14,7 +15,7 @@ impl Cell {
 impl core::fmt::Display for Cell {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Cell::Solved(n) = self {
-            f.write_str(&n.to_string())
+            f.write_str(&(n + 1).to_string())
         } else {
             f.write_str(&"_")
         }
@@ -104,7 +105,7 @@ impl GridTrait for Grid {
         for ref mut cell in self.into_iter().flatten() {
             if let Cell::Unsolved(candidates) = cell {
                 if candidates.iter().filter(|t| **t).count() == 1 {
-                    let n = candidates.iter().position(|c| *c == true).unwrap() + 1;
+                    let n = candidates.iter().position(|c| *c == true).unwrap();
                     **cell = Cell::Solved(n);
                     result = Some(());
                 }
@@ -122,8 +123,8 @@ impl GridTrait for Grid {
                 if let Cell::Solved(n) = row[i] {
                     for j in 0..9 {
                         if let Cell::Unsolved(ref mut candidates) = row[j] {
-                            if candidates[n - 1] {
-                                candidates[n - 1] = false;
+                            if candidates[n] {
+                                candidates[n] = false;
                                 result = Some(());
                             }
                         }
@@ -147,8 +148,8 @@ impl GridTrait for Grid {
             for cell in col {
                 for n in found.iter() {
                     if let Cell::Unsolved(ref mut candidates) = cell {
-                        if candidates[n - 1] {
-                            candidates[n - 1] = false;
+                        if candidates[*n] {
+                            candidates[*n] = false;
                             result = Some(());
                         }
                     }
@@ -171,49 +172,48 @@ impl GridTrait for Grid {
             for cell in bx {
                 for n in found.iter() {
                     if let Cell::Unsolved(ref mut candidates) = cell {
-                        if candidates[n - 1] {
-                            candidates[n - 1] = false;
+                        if candidates[*n] {
+                            candidates[*n] = false;
                             result = Some(());
                         }
                     }
                 }
             }
         }
-        // for br in 0..3 {
-        //     for bc in 0..3 {
-        //         for dr in 0..3 {
-        //             for dc in 0..3 {
-        //                 let r = br * 3 + dr;
-        //                 let c = bc * 3 + dc;
-        //                 if let Cell::Solved(n) = self[r][c] {
-        //                     for drr in 0..3 {
-        //                         for dcc in 0..3 {
-        //                             let rr = br * 3 + drr;
-        //                             let cc = bc * 3 + dcc;
-        //                             if let Cell::Unsolved(ref mut candidates) = self[rr][cc] {
-        //                                 if candidates[n - 1] {
-        //                                     candidates[n - 1] = false;
-        //                                     result = Some(());
-        //                                 }
-        //                             }
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+
         result
     }
     fn hidden_singles(&mut self) -> Option<()> {
-        Some(())
+        let mut result = None;
+        for row in self {
+            for i in 0..9 {
+                let cells: Vec<_> = row
+                    .iter_mut()
+                    .filter(|c| {
+                        if let Cell::Unsolved(cands) = c {
+                            return cands[i];
+                        }
+                        false
+                    })
+                    .collect();
+                if cells.len() == 1 {
+                    result = Some(());
+                    for cell in cells {
+                        *cell = Cell::Solved(i);
+                    }
+                }
+            }
+        }
+        result
     }
 
     fn step(&mut self) -> Option<()> {
         if let Some(_) = self.naked_singles() {
-            // println!("Naked singles");
+            println!("Naked singles");
         } else if let Some(_) = self.basic_elimination() {
-            // println!("Basic elimination");
+            println!("Basic elimination");
+        } else if let Some(_) = self.hidden_singles() {
+            println!("Hidden singles");
         } else {
             return None;
         }
@@ -249,7 +249,7 @@ impl GridTrait for Grid {
 
         if let Some((cell, (row, col), cands, _)) = target {
             if let Some(guess) = cands.first() {
-                println!("Trying {} at R{}C{}...", guess, row, col);
+                println!("Trying {} at R{}C{}...", guess + 1, row, col);
                 *cell = Cell::Solved(*guess);
             }
         }
@@ -267,15 +267,15 @@ impl GridTrait for Grid {
 }
 
 const PUZZLE: &str = "
-123______
-456______
-78_______
+_________
+1________
+________1
 _________
 _________
+___1_____
 _________
 _________
-_________
-_________
+_____1___
 ";
 
 fn main() -> Result<(), ()> {
@@ -289,15 +289,15 @@ fn main() -> Result<(), ()> {
         }
     }
 
-    println!("{}", PrintableGrid(grid));
+    println!("initial grid: \n{}", PrintableGrid(grid));
 
     let mut failed = false;
     while !grid.solved() && !failed {
         if let Some(_) = grid.step() {
+            println!("{}", PrintableGrid(grid));
         } else {
             failed = true;
         }
-        println!("\n{}", PrintableGrid(grid));
     }
     if !failed {
         println!("Puzzle solved!");
@@ -307,7 +307,7 @@ fn main() -> Result<(), ()> {
     // println!("Failed to find a solution. Try backtracking? (Y/N)");
     // let mut buffer = String::new();
     // std::io::stdin().read_line(&mut buffer).map_err(|_| ())?;
-    // if buffer.trim() == "Y" {
+    // if buffer.trim().to_lowercase() == "y" {
     //     grid.backtrack();
     //     println!("done");
     // }
