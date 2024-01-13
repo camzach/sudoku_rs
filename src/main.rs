@@ -195,7 +195,7 @@ impl GridTrait for Grid {
     }
     fn hidden_singles(&mut self) -> Option<()> {
         let mut result = None;
-        for row in self {
+        for row in self.iter_mut() {
             for i in 0..9 {
                 let cells: Vec<_> = row
                     .iter_mut()
@@ -209,11 +209,58 @@ impl GridTrait for Grid {
                 if cells.len() == 1 {
                     result = Some(());
                     for cell in cells {
-                        *cell = Cell::Solved(i);
+                        let mut newcands = [false; 9];
+                        newcands[i] = true;
+                        *cell = Cell::Unsolved(newcands);
                     }
                 }
             }
         }
+
+        for mut col in self.iter_cols_mut() {
+            for i in 0..9 {
+                let cells: Vec<_> = col
+                    .iter_mut()
+                    .filter(|c| {
+                        if let Cell::Unsolved(cands) = c {
+                            return cands[i];
+                        }
+                        false
+                    })
+                    .collect();
+                if cells.len() == 1 {
+                    result = Some(());
+                    for cell in cells {
+                        let mut newcands = [false; 9];
+                        newcands[i] = true;
+                        **cell = Cell::Unsolved(newcands);
+                    }
+                }
+            }
+        }
+
+        for mut bx in self.iter_boxes() {
+            for i in 0..9 {
+                let cells: Vec<_> = bx
+                    .iter_mut()
+                    .filter(|c| {
+                        if let Cell::Unsolved(cands) = c {
+                            return cands[i];
+                        }
+                        false
+                    })
+                    .collect();
+                if cells.len() == 1 {
+                    result = Some(());
+                    for cell in cells {
+                        let mut newcands = [false; 9];
+                        newcands[i] = true;
+                        **cell = Cell::Unsolved(newcands);
+                    }
+                }
+            }
+        }
+
         result
     }
 
