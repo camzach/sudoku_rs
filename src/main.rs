@@ -11,6 +11,15 @@ impl Cell {
     fn row(ns: [Option<usize>; 9]) -> [Cell; 9] {
         ns.map(Cell::new)
     }
+    fn remove_candidate(&mut self, n: usize) -> bool {
+        if let Cell::Unsolved(cands) = self {
+            if cands[n] {
+                cands[n] = false;
+                return true;
+            }
+        }
+        false
+    }
 }
 impl core::fmt::Display for Cell {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -34,7 +43,7 @@ trait GridTrait {
     fn solved(&self) -> bool;
     fn broken(&self) -> bool;
 
-    fn iter_cols_mut(&mut self) -> Vec<Vec<&mut Cell>>;
+    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>>;
     fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>>;
 
     fn naked_singles(&mut self) -> Option<()>;
@@ -87,7 +96,7 @@ impl GridTrait for Grid {
         })
     }
 
-    fn iter_cols_mut(&mut self) -> Vec<Vec<&mut Cell>> {
+    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>> {
         self.iter_mut().flatten().enumerate().fold(
             (0..9).map(|_| Vec::new()).collect(),
             |mut p, (i, c)| {
@@ -112,7 +121,7 @@ impl GridTrait for Grid {
         // println!("Searching for naked singles");
         let mut result = None;
 
-        for ref mut cell in self.into_iter().flatten() {
+        for ref mut cell in self.iter_mut().flatten() {
             if let Cell::Unsolved(candidates) = cell {
                 if candidates.iter().filter(|t| **t).count() == 1 {
                     let n = candidates.iter().position(|c| *c == true).unwrap();
@@ -126,66 +135,64 @@ impl GridTrait for Grid {
     fn basic_elimination(&mut self) -> Option<()> {
         // println!("Attempting basic elimination");
         let mut result = None;
-
         // rows
         for row in self.iter_mut() {
-            for i in 0..9 {
-                if let Cell::Solved(n) = row[i] {
-                    for j in 0..9 {
-                        if let Cell::Unsolved(ref mut candidates) = row[j] {
-                            if candidates[n] {
-                                candidates[n] = false;
-                                result = Some(());
-                            }
-                        }
+            let ns_present: Vec<_> = row
+                .iter_mut()
+                .filter_map(|c| {
+                    if let Cell::Solved(n) = c {
+                        Some(n.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            for cell in row {
+                for n in ns_present.iter() {
+                    if cell.remove_candidate(*n) {
+                        result = Some(())
                     }
                 }
             }
         }
 
         // cols
-        for col in self.iter_cols_mut() {
-            let found: Vec<usize> = col
-                .iter()
-                .filter_map(|cell| {
-                    if let Cell::Solved(n) = cell {
-                        Some(*n)
+        for mut col in self.iter_cols() {
+            let ns_present: Vec<_> = col
+                .iter_mut()
+                .filter_map(|c| {
+                    if let Cell::Solved(n) = c {
+                        Some(n.clone())
                     } else {
                         None
                     }
                 })
                 .collect();
             for cell in col {
-                for n in found.iter() {
-                    if let Cell::Unsolved(ref mut candidates) = cell {
-                        if candidates[*n] {
-                            candidates[*n] = false;
-                            result = Some(());
-                        }
+                for n in ns_present.iter() {
+                    if cell.remove_candidate(*n) {
+                        result = Some(())
                     }
                 }
             }
         }
 
         // boxes
-        for bx in self.iter_boxes() {
-            let found: Vec<usize> = bx
-                .iter()
-                .filter_map(|cell| {
-                    if let Cell::Solved(n) = cell {
-                        Some(*n)
+        for mut bx in self.iter_boxes() {
+            let ns_present: Vec<_> = bx
+                .iter_mut()
+                .filter_map(|c| {
+                    if let Cell::Solved(n) = c {
+                        Some(n.clone())
                     } else {
                         None
                     }
                 })
                 .collect();
             for cell in bx {
-                for n in found.iter() {
-                    if let Cell::Unsolved(ref mut candidates) = cell {
-                        if candidates[*n] {
-                            candidates[*n] = false;
-                            result = Some(());
-                        }
+                for n in ns_present.iter() {
+                    if cell.remove_candidate(*n) {
+                        result = Some(())
                     }
                 }
             }
@@ -217,7 +224,7 @@ impl GridTrait for Grid {
             }
         }
 
-        for mut col in self.iter_cols_mut() {
+        for mut col in self.iter_cols() {
             for i in 0..9 {
                 let cells: Vec<_> = col
                     .iter_mut()
@@ -343,7 +350,6 @@ const PUZZLE: &str = "
     ....6...3
     .4.......
     .87..3.2.
-    
     ";
 
 fn main() -> Result<(), ()> {
