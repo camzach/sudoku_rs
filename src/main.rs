@@ -32,6 +32,7 @@ struct PrintableGrid(Grid);
 trait GridTrait {
     fn new(grid: [[Option<usize>; 9]; 9]) -> Grid;
     fn solved(&self) -> bool;
+    fn broken(&self) -> bool;
 
     fn iter_cols_mut(&mut self) -> Vec<Vec<&mut Cell>>;
     fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>>;
@@ -75,6 +76,15 @@ impl GridTrait for Grid {
         self.iter()
             .flatten()
             .all(|c| if let Cell::Solved(_) = c { true } else { false })
+    }
+    fn broken(&self) -> bool {
+        self.iter().flatten().any(|cell| {
+            if let Cell::Unsolved(cands) = cell {
+                cands.iter().all(|t| !t)
+            } else {
+                false
+            }
+        })
     }
 
     fn iter_cols_mut(&mut self) -> Vec<Vec<&mut Cell>> {
@@ -221,72 +231,83 @@ impl GridTrait for Grid {
     }
 
     fn backtrack(&mut self) -> Option<()> {
-        let mut copy = [[Cell::default(); 9]; 9];
-        copy.copy_from_slice(self);
-
-        // (cell, (row, col), cands, count)
-        let mut target: Option<(&mut Cell, (usize, usize), Vec<usize>, usize)> = None;
-
-        for (i, cell) in copy.iter_mut().flatten().enumerate() {
-            if let Cell::Unsolved(clues) = cell {
-                let cands: Vec<_> = clues
-                    .clone()
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(i, b)| if b { Some(i + 1) } else { None })
-                    .collect();
-                let numcands = cands.clone().len();
-                let coords = ((i / 9) + 1, (i % 9) + 1);
-                match target {
-                    Some((_, _, _, other)) if other > numcands => {
-                        target = Some((&mut (*cell), coords, cands, numcands))
+        let target = self.iter().flatten().enumerate().fold(None, |p, (i, c)| {
+            let Cell::Unsolved(ccands) = c else { return p };
+            if let Some(pi) = p {
+                let prow: [Cell; 9] = self[pi / 9];
+                let pcell = prow[pi % 9];
+                if let Cell::Unsolved(pcands) = pcell {
+                    if ccands.iter().filter(|t| **t).count() < pcands.iter().filter(|t| **t).count()
+                    {
+                        return Some(i);
                     }
-                    None => target = Some((&mut (*cell), coords, cands, numcands)),
-                    _ => {}
+                }
+                return p;
+            } else {
+                return Some(i);
+            }
+        });
+
+        let Some(i) = target else { return None };
+        let Cell::Unsolved(cands) = self[i / 9][i % 9] else {
+            return None;
+        };
+
+        let mut copy = [[Cell::default(); 9]; 9];
+        for cand in cands
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| if *t { Some(i) } else { None })
+        {
+            copy.copy_from_slice(self);
+            copy[i / 9][i % 9] = Cell::Solved(cand);
+            println!("Trying a {} in R{}C{}...", cand + 1, i / 9, i % 9);
+            println!("{}", PrintableGrid(copy));
+            while !copy.solved() {
+                if let Some(_) = copy.step() {
+                    println!("{}", PrintableGrid(copy));
+                } else if copy.broken() {
+                    println!("Backtracking failed, backing up");
+                    break;
+                } else if !copy.solved() {
+                    println!("Backtracking further...");
+                    if let Some(()) = copy.backtrack() {
+                        return Some(());
+                    }
                 }
             }
-        }
-
-        if let Some((cell, (row, col), cands, _)) = target {
-            if let Some(guess) = cands.first() {
-                println!("Trying {} at R{}C{}...", guess + 1, row, col);
-                *cell = Cell::Solved(*guess);
+            if copy.solved() {
+                println!("Solution found!\n{}", PrintableGrid(copy));
+                return Some(());
             }
         }
 
-        let mut failed = false;
-        while !copy.solved() && !failed {
-            if let None = copy.step() {
-                failed = true;
-            }
-        }
-        // copy.display();
-
-        Some(())
+        None
     }
 }
 
 const PUZZLE: &str = "
-_________
-1________
-________1
-_________
-_________
-___1_____
-_________
-_________
-_____1___
-";
+    9...3....
+    ...1..5..
+    .32..6.8.
+    6......9.
+    .79.5.8..
+    4....7...
+    ....6...3
+    .4.......
+    .87..3.2.
+    
+    ";
 
 fn main() -> Result<(), ()> {
     let mut grid = [[Cell::new(None); 9]; 9];
-    for (row, line) in PUZZLE.trim().lines().enumerate() {
-        for (col, c) in line.chars().enumerate() {
-            if row >= 9 || col >= 9 {
-                continue;
-            }
-            grid[row][col] = Cell::new(c.to_digit(10).map(|d| d as usize))
+    for (i, c) in PUZZLE.replace([' ', '\n', '\t'], "").chars().enumerate() {
+        let row = i / 9;
+        let col = i % 9;
+        if row >= 9 || col >= 9 {
+            continue;
         }
+        grid[row][col] = Cell::new(c.to_digit(10).map(|d| d as usize))
     }
 
     println!("initial grid: \n{}", PrintableGrid(grid));
@@ -304,12 +325,15 @@ fn main() -> Result<(), ()> {
         return Ok(());
     }
 
-    // println!("Failed to find a solution. Try backtracking? (Y/N)");
-    // let mut buffer = String::new();
-    // std::io::stdin().read_line(&mut buffer).map_err(|_| ())?;
-    // if buffer.trim().to_lowercase() == "y" {
-    //     grid.backtrack();
-    //     println!("done");
-    // }
+    println!("Failed to find a solution. Try backtracking? (Y/N)");
+    let mut buffer = String::new();
+    std::io::stdin().read_line(&mut buffer).map_err(|_| ())?;
+    if buffer.trim().to_lowercase() == "y" {
+        if let Some(_) = grid.backtrack() {
+            println!("Solved!")
+        } else {
+            println!("Failed to solve puzzle")
+        }
+    }
     Ok(())
 }
