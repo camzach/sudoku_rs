@@ -1,4 +1,7 @@
-use std::fs::read_to_string;
+use std::{
+    fs::read_to_string,
+    ops::{Deref, DerefMut},
+};
 
 use clap::Parser;
 use log::{info, trace};
@@ -14,9 +17,6 @@ impl Cell {
     fn new(n: Option<usize>) -> Cell {
         n.map(|n| Cell::Solved(n - 1))
             .unwrap_or(Cell::Unsolved([true; 9]))
-    }
-    fn row(ns: [Option<usize>; 9]) -> [Cell; 9] {
-        ns.map(Cell::new)
     }
     fn remove_candidate(&mut self, n: usize) -> bool {
         if let Cell::Unsolved(cands) = self {
@@ -43,9 +43,8 @@ impl std::default::Default for Cell {
     }
 }
 
-type Grid = [[Cell; 9]; 9];
-struct PrintableGrid(Grid);
-impl std::fmt::Display for PrintableGrid {
+struct Grid([[Cell; 9]; 9]);
+impl std::fmt::Display for Grid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for (i, line) in self.0.into_iter().enumerate() {
             if i % 3 == 0 && i > 0 {
@@ -64,31 +63,19 @@ impl std::fmt::Display for PrintableGrid {
         Ok(())
     }
 }
+impl Deref for Grid {
+    type Target = [[Cell; 9]; 9];
 
-trait GridTrait {
-    fn new(grid: [[Option<usize>; 9]; 9]) -> Grid;
-    fn solved(&self) -> bool;
-    fn broken(&self) -> bool;
-
-    fn cols(&mut self) -> Vec<Vec<&mut Cell>>;
-    fn boxes(&mut self) -> Vec<Vec<&mut Cell>>;
-
-    fn naked_singles(&mut self) -> Option<()>;
-    fn basic_elimination(&mut self) -> Option<()>;
-    fn hidden_singles(&mut self) -> Option<()>;
-
-    fn step(&mut self) -> Option<()>;
-
-    fn backtrack(&mut self) -> Option<()>;
-}
-impl GridTrait for Grid {
-    fn new(grid: [[Option<usize>; 9]; 9]) -> Grid {
-        let mut result = [[Cell::new(None); 9]; 9];
-        for (i, row) in grid.into_iter().enumerate() {
-            result[i] = Cell::row(row);
-        }
-        return result;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
+impl DerefMut for Grid {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Grid {
     fn solved(&self) -> bool {
         self.iter()
             .flatten()
@@ -316,19 +303,19 @@ impl GridTrait for Grid {
             return None;
         };
 
-        let mut copy = [[Cell::default(); 9]; 9];
+        let mut copy = Grid([[Cell::default(); 9]; 9]);
         for cand in cands
             .iter()
             .enumerate()
             .filter_map(|(i, t)| if *t { Some(i) } else { None })
         {
-            copy.copy_from_slice(self);
+            copy.copy_from_slice(&(*self).0);
             copy[i / 9][i % 9] = Cell::Solved(cand);
             trace!("Trying a {} in R{}C{}...", cand + 1, i / 9, i % 9);
-            trace!("{}", PrintableGrid(copy));
+            trace!("{}", copy);
             while !copy.solved() {
                 if let Some(_) = copy.step() {
-                    trace!("{}", PrintableGrid(copy));
+                    trace!("{}", copy);
                 } else if copy.broken() {
                     trace!("Backtracking failed, backing up");
                     break;
@@ -340,7 +327,7 @@ impl GridTrait for Grid {
                 }
             }
             if copy.solved() {
-                info!("Solution found!\n{}", PrintableGrid(copy));
+                info!("Solution found!\n{}", copy);
                 return Some(());
             }
         }
@@ -353,7 +340,7 @@ impl GridTrait for Grid {
 mod test {
     use std::collections::HashSet;
 
-    use crate::{Cell, Grid, GridTrait};
+    use crate::{Cell, Grid};
 
     fn exact_candidates(cell: &Cell, candidates: &HashSet<usize>) -> bool {
         if let Cell::Unsolved(c) = cell {
@@ -369,7 +356,7 @@ mod test {
 
     #[test]
     fn naked_singles() {
-        let mut grid = [[Cell::default(); 9]; 9];
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
         let mut opts = [false; 9];
         opts[0] = true;
         grid[0][0] = Cell::Unsolved(opts);
@@ -379,7 +366,7 @@ mod test {
 
     #[test]
     fn basic_elimination() {
-        let mut grid = [[Cell::default(); 9]; 9];
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
         grid[0][0] = Cell::Solved(0);
         let reduced = HashSet::from([1, 2, 3, 4, 5, 6, 7, 8]);
         let unreduced = HashSet::from([0, 1, 2, 3, 4, 5, 6, 7, 8]);
@@ -412,7 +399,7 @@ mod test {
 
     #[test]
     fn hidden_singles() {
-        let mut grid = Grid::new([[None; 9]; 9]);
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
 
         for cell in grid[8].iter_mut().skip(1) {
             cell.remove_candidate(0);
@@ -470,7 +457,7 @@ fn main() -> Result<(), ()> {
         return Err(());
     };
 
-    let mut grid = [[Cell::default(); 9]; 9];
+    let mut grid = Grid([[Cell::default(); 9]; 9]);
     for (i, char) in input.replace([' ', '\n', '\t'], "").chars().enumerate() {
         if i >= 81 {
             break;
@@ -478,12 +465,12 @@ fn main() -> Result<(), ()> {
         grid[i / 9][i % 9] = Cell::new(char.to_digit(10).map(|d| d as usize));
     }
 
-    trace!("initial grid: \n{}", PrintableGrid(grid));
+    trace!("initial grid: \n{}", grid);
 
     let mut failed = false;
     while !grid.solved() && !failed {
         if let Some(_) = grid.step() {
-            trace!("{}", PrintableGrid(grid));
+            trace!("{}", grid);
         } else {
             failed = true;
         }
