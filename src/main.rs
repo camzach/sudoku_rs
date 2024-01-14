@@ -1,3 +1,10 @@
+use std::fs::read_to_string;
+
+use clap::Parser;
+use log::{info, trace};
+use simple_logger::{set_up_color_terminal, SimpleLogger};
+// use std::io::Read;
+
 #[derive(Clone, Copy, Debug)]
 enum Cell {
     Solved(usize),
@@ -118,7 +125,7 @@ impl GridTrait for Grid {
     }
 
     fn naked_singles(&mut self) -> Option<()> {
-        // println!("Searching for naked singles");
+        trace!("Searching for naked singles");
         let mut result = None;
 
         for ref mut cell in self.iter_mut().flatten() {
@@ -133,7 +140,7 @@ impl GridTrait for Grid {
         result
     }
     fn basic_elimination(&mut self) -> Option<()> {
-        // println!("Attempting basic elimination");
+        trace!("Attempting basic elimination");
         let mut result = None;
         // rows
         for row in self.iter_mut() {
@@ -201,6 +208,7 @@ impl GridTrait for Grid {
         result
     }
     fn hidden_singles(&mut self) -> Option<()> {
+        trace!("Searching for hidden singles");
         let mut result = None;
         for row in self.iter_mut() {
             for i in 0..9 {
@@ -273,11 +281,11 @@ impl GridTrait for Grid {
 
     fn step(&mut self) -> Option<()> {
         if let Some(_) = self.naked_singles() {
-            println!("Naked singles");
+            trace!("Naked singles");
         } else if let Some(_) = self.basic_elimination() {
-            println!("Basic elimination");
+            trace!("Basic elimination");
         } else if let Some(_) = self.hidden_singles() {
-            println!("Hidden singles");
+            trace!("Hidden singles");
         } else {
             return None;
         }
@@ -315,23 +323,23 @@ impl GridTrait for Grid {
         {
             copy.copy_from_slice(self);
             copy[i / 9][i % 9] = Cell::Solved(cand);
-            println!("Trying a {} in R{}C{}...", cand + 1, i / 9, i % 9);
-            println!("{}", PrintableGrid(copy));
+            trace!("Trying a {} in R{}C{}...", cand + 1, i / 9, i % 9);
+            trace!("{}", PrintableGrid(copy));
             while !copy.solved() {
                 if let Some(_) = copy.step() {
-                    println!("{}", PrintableGrid(copy));
+                    trace!("{}", PrintableGrid(copy));
                 } else if copy.broken() {
-                    println!("Backtracking failed, backing up");
+                    trace!("Backtracking failed, backing up");
                     break;
                 } else if !copy.solved() {
-                    println!("Backtracking further...");
+                    trace!("Backtracking further...");
                     if let Some(()) = copy.backtrack() {
                         return Some(());
                     }
                 }
             }
             if copy.solved() {
-                println!("Solution found!\n{}", PrintableGrid(copy));
+                info!("Solution found!\n{}", PrintableGrid(copy));
                 return Some(());
             }
         }
@@ -340,53 +348,75 @@ impl GridTrait for Grid {
     }
 }
 
-const PUZZLE: &str = "
-    9...3....
-    ...1..5..
-    .32..6.8.
-    6......9.
-    .79.5.8..
-    4....7...
-    ....6...3
-    .4.......
-    .87..3.2.
-    ";
+#[derive(Parser, Debug)]
+#[command()]
+struct Args {
+    /// File to read from.
+    /// If omitted, the sudoku will be read from stdin
+    input: Option<String>,
+    /// Enables backtracking when no logical steps remain
+    #[arg(short, long)]
+    backtracking: bool,
+    #[command(flatten)]
+    log_level: clap_verbosity_flag::Verbosity,
+}
 
 fn main() -> Result<(), ()> {
-    let mut grid = [[Cell::new(None); 9]; 9];
-    for (i, c) in PUZZLE.replace([' ', '\n', '\t'], "").chars().enumerate() {
-        let row = i / 9;
-        let col = i % 9;
-        if row >= 9 || col >= 9 {
-            continue;
+    let args = Args::parse();
+
+    set_up_color_terminal();
+    let logger = SimpleLogger::new();
+
+    if let Err(_) = log::set_boxed_logger(Box::new(logger)) {
+        println!("Failed to initialize logging");
+        return Err(());
+    }
+    log::set_max_level(args.log_level.log_level_filter());
+
+    let Ok(input) = (match args.input {
+        Some(infile) => read_to_string(infile),
+        _ => {
+            let mut out = String::new();
+            println!("Enter your puzzle in one line, using any non-digit, non-whitespace character to represent an unknown cell.");
+            std::io::stdin().read_line(&mut out).map(|_| out)
         }
-        grid[row][col] = Cell::new(c.to_digit(10).map(|d| d as usize))
+    }) else {
+        return Err(());
+    };
+
+    let mut grid = [[Cell::default(); 9]; 9];
+    for (i, char) in input.replace([' ', '\n', '\t'], "").chars().enumerate() {
+        if i >= 81 {
+            break;
+        }
+        grid[i / 9][i % 9] = Cell::new(char.to_digit(10).map(|d| d as usize));
     }
 
-    println!("initial grid: \n{}", PrintableGrid(grid));
+    trace!("initial grid: \n{}", PrintableGrid(grid));
 
     let mut failed = false;
     while !grid.solved() && !failed {
         if let Some(_) = grid.step() {
-            println!("{}", PrintableGrid(grid));
+            trace!("{}", PrintableGrid(grid));
         } else {
             failed = true;
         }
     }
     if !failed {
-        println!("Puzzle solved!");
+        info!("Puzzle solved!");
         return Ok(());
     }
 
-    println!("Failed to find a solution. Try backtracking? (Y/N)");
-    let mut buffer = String::new();
-    std::io::stdin().read_line(&mut buffer).map_err(|_| ())?;
-    if buffer.trim().to_lowercase() == "y" {
+    info!("Failed to find a solution.");
+    if args.backtracking {
+        trace!("Starting backtracking");
         if let Some(_) = grid.backtrack() {
-            println!("Solved!")
+            info!("Solved!")
         } else {
-            println!("Failed to solve puzzle")
+            info!("Failed to solve puzzle")
         }
+    } else {
+        info!("Run with --backtracking to try again with backtracking enabled");
     }
     Ok(())
 }
