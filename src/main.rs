@@ -45,22 +45,6 @@ impl std::default::Default for Cell {
 
 type Grid = [[Cell; 9]; 9];
 struct PrintableGrid(Grid);
-trait GridTrait {
-    fn new(grid: [[Option<usize>; 9]; 9]) -> Grid;
-    fn solved(&self) -> bool;
-    fn broken(&self) -> bool;
-
-    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>>;
-    fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>>;
-
-    fn naked_singles(&mut self) -> Option<()>;
-    fn basic_elimination(&mut self) -> Option<()>;
-    fn hidden_singles(&mut self) -> Option<()>;
-
-    fn step(&mut self) -> Option<()>;
-
-    fn backtrack(&mut self) -> Option<()>;
-}
 impl std::fmt::Display for PrintableGrid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for (i, line) in self.0.into_iter().enumerate() {
@@ -79,6 +63,23 @@ impl std::fmt::Display for PrintableGrid {
         }
         Ok(())
     }
+}
+
+trait GridTrait {
+    fn new(grid: [[Option<usize>; 9]; 9]) -> Grid;
+    fn solved(&self) -> bool;
+    fn broken(&self) -> bool;
+
+    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>>;
+    fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>>;
+
+    fn naked_singles(&mut self) -> Option<()>;
+    fn basic_elimination(&mut self) -> Option<()>;
+    fn hidden_singles(&mut self) -> Option<()>;
+
+    fn step(&mut self) -> Option<()>;
+
+    fn backtrack(&mut self) -> Option<()>;
 }
 impl GridTrait for Grid {
     fn new(grid: [[Option<usize>; 9]; 9]) -> Grid {
