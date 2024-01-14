@@ -70,8 +70,8 @@ trait GridTrait {
     fn solved(&self) -> bool;
     fn broken(&self) -> bool;
 
-    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>>;
-    fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>>;
+    fn cols(&mut self) -> Vec<Vec<&mut Cell>>;
+    fn boxes(&mut self) -> Vec<Vec<&mut Cell>>;
 
     fn naked_singles(&mut self) -> Option<()>;
     fn basic_elimination(&mut self) -> Option<()>;
@@ -104,7 +104,7 @@ impl GridTrait for Grid {
         })
     }
 
-    fn iter_cols(&mut self) -> Vec<Vec<&mut Cell>> {
+    fn cols(&mut self) -> Vec<Vec<&mut Cell>> {
         self.iter_mut().flatten().enumerate().fold(
             (0..9).map(|_| Vec::new()).collect(),
             |mut p, (i, c)| {
@@ -113,7 +113,7 @@ impl GridTrait for Grid {
             },
         )
     }
-    fn iter_boxes(&mut self) -> Vec<Vec<&mut Cell>> {
+    fn boxes(&mut self) -> Vec<Vec<&mut Cell>> {
         self.iter_mut().flatten().enumerate().fold(
             (0..9).map(|_| Vec::new()).collect(),
             |mut p, (i, c)| {
@@ -165,7 +165,7 @@ impl GridTrait for Grid {
         }
 
         // cols
-        for mut col in self.iter_cols() {
+        for mut col in self.cols() {
             let ns_present: Vec<_> = col
                 .iter_mut()
                 .filter_map(|c| {
@@ -186,7 +186,7 @@ impl GridTrait for Grid {
         }
 
         // boxes
-        for mut bx in self.iter_boxes() {
+        for mut bx in self.boxes() {
             let ns_present: Vec<_> = bx
                 .iter_mut()
                 .filter_map(|c| {
@@ -233,7 +233,7 @@ impl GridTrait for Grid {
             }
         }
 
-        for mut col in self.iter_cols() {
+        for mut col in self.cols() {
             for i in 0..9 {
                 let cells: Vec<_> = col
                     .iter_mut()
@@ -255,7 +255,7 @@ impl GridTrait for Grid {
             }
         }
 
-        for mut bx in self.iter_boxes() {
+        for mut bx in self.boxes() {
             for i in 0..9 {
                 let cells: Vec<_> = bx
                     .iter_mut()
@@ -346,6 +346,91 @@ impl GridTrait for Grid {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+
+    use crate::{Cell, Grid, GridTrait};
+
+    fn exact_candidates(cell: &Cell, candidates: &HashSet<usize>) -> bool {
+        if let Cell::Unsolved(c) = cell {
+            for (i, cand) in c.iter().enumerate() {
+                if *cand != candidates.contains(&i) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    #[test]
+    fn naked_singles() {
+        let mut grid = [[Cell::default(); 9]; 9];
+        let mut opts = [false; 9];
+        opts[0] = true;
+        grid[0][0] = Cell::Unsolved(opts);
+        assert!(matches!(grid.naked_singles(), Some(())));
+        assert!(matches!(grid[0][0], Cell::Solved(0)));
+    }
+
+    #[test]
+    fn basic_elimination() {
+        let mut grid = [[Cell::default(); 9]; 9];
+        grid[0][0] = Cell::Solved(0);
+        let reduced = HashSet::from([1, 2, 3, 4, 5, 6, 7, 8]);
+        let unreduced = HashSet::from([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+        assert!(matches!(grid.basic_elimination(), Some(())));
+
+        assert!(grid[0]
+            .iter()
+            .skip(1)
+            .all(|c| exact_candidates(c, &reduced)));
+
+        let mut iter_rows = grid.iter();
+        assert!(iter_rows.by_ref().skip(1).take(2).all(|row| {
+            let mut row_iter = row.iter();
+            row_iter
+                .by_ref()
+                .take(3)
+                .all(|c| exact_candidates(c, &reduced))
+                && row_iter.all(|c| exact_candidates(c, &unreduced))
+        }));
+        assert!(iter_rows.all(|row| {
+            let mut row_iter = row.iter();
+            row_iter
+                .by_ref()
+                .take(1)
+                .all(|c| exact_candidates(c, &reduced))
+                && row_iter.all(|c| exact_candidates(c, &unreduced))
+        }));
+    }
+
+    #[test]
+    fn hidden_singles() {
+        let mut grid = Grid::new([[None; 9]; 9]);
+
+        for cell in grid[8].iter_mut().skip(1) {
+            cell.remove_candidate(0);
+        }
+
+        for cell in grid.cols().get_mut(8).unwrap().iter_mut().skip(1) {
+            cell.remove_candidate(1);
+        }
+
+        for cell in grid.boxes().get_mut(4).unwrap().iter_mut().skip(1) {
+            cell.remove_candidate(2);
+        }
+
+        assert!(matches!(grid.hidden_singles(), Some(())));
+
+        assert!(exact_candidates(&grid[8][0], &HashSet::from([0])));
+        assert!(exact_candidates(&grid[0][8], &HashSet::from([1])));
+        assert!(exact_candidates(&grid[3][3], &HashSet::from([2])));
     }
 }
 
