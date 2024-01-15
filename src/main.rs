@@ -1,14 +1,15 @@
 use std::{
+    collections::HashMap,
     fs::read_to_string,
+    hash::Hash,
     ops::{Deref, DerefMut},
 };
 
 use clap::Parser;
 use log::{info, trace};
 use simple_logger::{set_up_color_terminal, SimpleLogger};
-// use std::io::Read;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 enum Cell {
     Solved(usize),
     Unsolved([bool; 9]),
@@ -26,6 +27,17 @@ impl Cell {
             }
         }
         false
+    }
+    fn candidates(&self) -> Vec<usize> {
+        if let Self::Unsolved(candidates) = self {
+            candidates
+                .iter()
+                .enumerate()
+                .filter_map(|(i, n)| if *n { Some(i) } else { None })
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 }
 impl core::fmt::Display for Cell {
@@ -46,7 +58,7 @@ impl std::default::Default for Cell {
 struct Grid([[Cell; 9]; 9]);
 impl std::fmt::Display for Grid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for (i, line) in self.0.into_iter().enumerate() {
+        for (i, line) in self.into_iter().enumerate() {
             if i % 3 == 0 && i > 0 {
                 f.write_str("---------+---------+---------\n")?;
             }
@@ -266,6 +278,95 @@ impl Grid {
 
         result
     }
+    fn naked_tuples(&mut self) -> Option<()> {
+        trace!("Searching for naked tuples");
+        let mut result = None;
+
+        for row in self.0.iter_mut() {
+            let mut map: HashMap<Cell, usize> = HashMap::new();
+            for cell in row.iter() {
+                if let Some(count) = map.get_mut(cell) {
+                    *count += 1;
+                } else {
+                    map.insert(*cell, 1);
+                }
+            }
+
+            for id in map.iter().filter_map(|(c, count)| {
+                if c.candidates().len() == *count {
+                    Some(c)
+                } else {
+                    None
+                }
+            }) {
+                let candidates = id.candidates();
+                for cell in row.iter_mut().filter(|c| *c != id) {
+                    for cand in candidates.iter() {
+                        if cell.remove_candidate(*cand) {
+                            result = Some(());
+                        };
+                    }
+                }
+            }
+        }
+
+        for col in self.cols().iter_mut() {
+            let mut map: HashMap<Cell, usize> = HashMap::new();
+            for cell in col.iter() {
+                if let Some(count) = map.get_mut(cell) {
+                    *count += 1;
+                } else {
+                    map.insert(**cell, 1);
+                }
+            }
+
+            for id in map.iter().filter_map(|(c, count)| {
+                if c.candidates().len() == *count {
+                    Some(c)
+                } else {
+                    None
+                }
+            }) {
+                let candidates = id.candidates();
+                for cell in col.iter_mut().filter(|c| **c != id) {
+                    for cand in candidates.iter() {
+                        if cell.remove_candidate(*cand) {
+                            result = Some(());
+                        };
+                    }
+                }
+            }
+        }
+        for bx in self.boxes().iter_mut() {
+            let mut map: HashMap<Cell, usize> = HashMap::new();
+            for cell in bx.iter() {
+                if let Some(count) = map.get_mut(cell) {
+                    *count += 1;
+                } else {
+                    map.insert(**cell, 1);
+                }
+            }
+
+            for id in map.iter().filter_map(|(c, count)| {
+                if c.candidates().len() == *count {
+                    Some(c)
+                } else {
+                    None
+                }
+            }) {
+                let candidates = id.candidates();
+                for cell in bx.iter_mut().filter(|c| **c != id) {
+                    for cand in candidates.iter() {
+                        if cell.remove_candidate(*cand) {
+                            result = Some(());
+                        };
+                    }
+                }
+            }
+        }
+
+        result
+    }
 
     fn step(&mut self) -> Option<()> {
         if let Some(_) = self.naked_singles() {
@@ -274,6 +375,8 @@ impl Grid {
             trace!("Basic elimination");
         } else if let Some(_) = self.hidden_singles() {
             trace!("Hidden singles");
+        } else if let Some(_) = self.naked_tuples() {
+            trace!("Naked tuples");
         } else {
             return None;
         }
@@ -341,17 +444,25 @@ mod test {
     use std::collections::HashSet;
 
     use crate::{Cell, Grid};
-
-    fn exact_candidates(cell: &Cell, candidates: &HashSet<usize>) -> bool {
-        if let Cell::Unsolved(c) = cell {
-            for (i, cand) in c.iter().enumerate() {
-                if *cand != candidates.contains(&i) {
-                    return false;
+    impl Cell {
+        fn exact_candidates(&self, candidates: &HashSet<usize>) -> bool {
+            if let Cell::Unsolved(c) = self {
+                for (i, cand) in c.iter().enumerate() {
+                    if *cand != candidates.contains(&i) {
+                        return false;
+                    }
                 }
+                return true;
             }
-            return true;
+            false
         }
-        false
+        fn has_candidate(&self, n: usize) -> bool {
+            if let Cell::Unsolved(cands) = self {
+                cands[n]
+            } else {
+                false
+            }
+        }
     }
 
     #[test]
@@ -373,10 +484,7 @@ mod test {
 
         assert!(matches!(grid.basic_elimination(), Some(())));
 
-        assert!(grid[0]
-            .iter()
-            .skip(1)
-            .all(|c| exact_candidates(c, &reduced)));
+        assert!(grid[0].iter().skip(1).all(|c| c.exact_candidates(&reduced)));
 
         let mut iter_rows = grid.iter();
         assert!(iter_rows.by_ref().skip(1).take(2).all(|row| {
@@ -384,16 +492,16 @@ mod test {
             row_iter
                 .by_ref()
                 .take(3)
-                .all(|c| exact_candidates(c, &reduced))
-                && row_iter.all(|c| exact_candidates(c, &unreduced))
+                .all(|c| c.exact_candidates(&reduced))
+                && row_iter.all(|c| c.exact_candidates(&unreduced))
         }));
         assert!(iter_rows.all(|row| {
             let mut row_iter = row.iter();
             row_iter
                 .by_ref()
                 .take(1)
-                .all(|c| exact_candidates(c, &reduced))
-                && row_iter.all(|c| exact_candidates(c, &unreduced))
+                .all(|c| c.exact_candidates(&reduced))
+                && row_iter.all(|c| c.exact_candidates(&unreduced))
         }));
     }
 
@@ -415,9 +523,50 @@ mod test {
 
         assert!(matches!(grid.hidden_singles(), Some(())));
 
-        assert!(exact_candidates(&grid[8][0], &HashSet::from([0])));
-        assert!(exact_candidates(&grid[0][8], &HashSet::from([1])));
-        assert!(exact_candidates(&grid[3][3], &HashSet::from([2])));
+        assert!(grid[8][0].exact_candidates(&HashSet::from([0])));
+        assert!(grid[0][8].exact_candidates(&HashSet::from([1])));
+        assert!(grid[3][3].exact_candidates(&HashSet::from([2])));
+    }
+
+    #[test]
+    fn naked_tuples() {
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
+
+        let a = [true, true, false, false, false, false, false, false, false];
+        grid[0][2] = Cell::Unsolved(a);
+        grid[0][6] = Cell::Unsolved(a);
+
+        let b = [false, false, true, true, false, false, false, false, false];
+        grid[1][0] = Cell::Unsolved(b);
+        grid[6][0] = Cell::Unsolved(b);
+
+        let c = [false, false, false, false, true, true, false, false, false];
+        grid[0][0] = Cell::Unsolved(c);
+        grid[1][1] = Cell::Unsolved(c);
+
+        assert!(matches!(grid.naked_tuples(), Some(())));
+
+        assert!(grid[0]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| if i == 2 || i == 6 { None } else { Some(c) })
+            .all(|c| !c.has_candidate(0) && !c.has_candidate(1)));
+        assert!(grid
+            .cols()
+            .get(0)
+            .unwrap()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| if i == 1 || i == 6 { None } else { Some(c) })
+            .all(|c| !c.has_candidate(2) && !c.has_candidate(3)));
+        assert!(grid
+            .boxes()
+            .get(0)
+            .unwrap()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| if i == 0 || i == 4 { None } else { Some(c) })
+            .all(|c| !c.has_candidate(4) && !c.has_candidate(5)));
     }
 }
 
