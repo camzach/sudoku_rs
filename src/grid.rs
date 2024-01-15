@@ -12,7 +12,7 @@ pub enum Cell {
     Unsolved([bool; 9]),
 }
 impl Cell {
-    fn remove_candidate(&mut self, n: usize) -> bool {
+    pub fn remove_candidate(&mut self, n: usize) -> bool {
         if let Cell::Unsolved(cands) = self {
             if cands[n] {
                 cands[n] = false;
@@ -103,7 +103,7 @@ impl Grid {
         })
     }
 
-    fn cols(&mut self) -> Vec<Vec<&mut Cell>> {
+    pub fn cols(&mut self) -> Vec<Vec<&mut Cell>> {
         self.iter_mut().flatten().enumerate().fold(
             (0..9).map(|_| Vec::new()).collect(),
             |mut p, (i, c)| {
@@ -112,7 +112,7 @@ impl Grid {
             },
         )
     }
-    fn boxes(&mut self) -> Vec<Vec<&mut Cell>> {
+    pub fn boxes(&mut self) -> Vec<Vec<&mut Cell>> {
         self.iter_mut().flatten().enumerate().fold(
             (0..9).map(|_| Vec::new()).collect(),
             |mut p, (i, c)| {
