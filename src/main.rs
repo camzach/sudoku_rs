@@ -7,6 +7,16 @@ use simple_logger::{set_up_color_terminal, SimpleLogger};
 mod grid;
 use grid::{Cell, Grid};
 
+use crate::{
+    basic_sudoku::{basic_elimination, hidden_singles, naked_singles, naked_tuples},
+    chess_strategies::kings,
+    solver::Solver,
+};
+
+mod basic_sudoku;
+mod chess_strategies;
+mod solver;
+
 #[derive(Parser, Debug)]
 #[command()]
 struct Args {
@@ -16,6 +26,9 @@ struct Args {
     /// Enables backtracking when no logical steps remain
     #[arg(short, long)]
     backtracking: bool,
+    /// Enables antiKing constraint
+    #[arg(short = 'k', long)]
+    antiking: bool,
     #[command(flatten)]
     log_level: clap_verbosity_flag::Verbosity,
 }
@@ -53,9 +66,18 @@ fn main() -> Result<(), ()> {
 
     trace!("initial grid: \n{}", grid);
 
+    let mut solver = Solver::new();
+    solver.add_strategy(naked_singles);
+    solver.add_strategy(basic_elimination);
+    solver.add_strategy(hidden_singles);
+    solver.add_strategy(naked_tuples);
+    if args.antiking {
+        solver.add_strategy(kings);
+    }
+
     let mut failed = false;
     while !grid.solved() && !failed {
-        if let Some(_) = grid.step() {
+        if solver.step(&mut grid) {
             trace!("{}", grid);
         } else {
             failed = true;
@@ -69,7 +91,7 @@ fn main() -> Result<(), ()> {
     info!("Failed to find a solution logically.");
     if args.backtracking {
         trace!("Starting backtracking");
-        if let Some(_) = grid.backtrack() {
+        if solver.backtrack(&mut grid) {
             info!("Solved!")
         } else {
             info!("Puzzle has no solutions")
