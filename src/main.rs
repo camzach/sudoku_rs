@@ -9,7 +9,7 @@ use grid::{Cell, Grid};
 
 use crate::{
     basic_sudoku::{basic_elimination, hidden_singles, naked_singles, naked_tuples},
-    chess_strategies::kings,
+    chess_strategies::{kings, knights},
     solver::Solver,
 };
 
@@ -29,6 +29,9 @@ struct Args {
     /// Enables antiKing constraint
     #[arg(short = 'k', long)]
     antiking: bool,
+    /// Enables antikNight constraint
+    #[arg(short = 'n', long)]
+    antiknight: bool,
     #[command(flatten)]
     log_level: clap_verbosity_flag::Verbosity,
 }
@@ -69,11 +72,14 @@ fn main() -> Result<(), ()> {
     let mut solver = Solver::new();
     solver.add_strategy(naked_singles);
     solver.add_strategy(basic_elimination);
-    solver.add_strategy(hidden_singles);
-    solver.add_strategy(naked_tuples);
     if args.antiking {
         solver.add_strategy(kings);
     }
+    if args.antiknight {
+        solver.add_strategy(knights)
+    }
+    solver.add_strategy(hidden_singles);
+    solver.add_strategy(naked_tuples);
 
     let mut failed = false;
     while !grid.solved() && !failed {
