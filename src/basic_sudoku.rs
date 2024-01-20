@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use itertools::Itertools;
 
@@ -24,138 +24,75 @@ pub fn naked_singles(grid: &mut Grid) -> bool {
 pub fn basic_elimination(grid: &mut Grid) -> bool {
     trace!("Attempting basic elimination");
     let mut result = false;
-    // rows
+
+    fn process_group(group: Vec<&mut Cell>) -> bool {
+        let mut result = false;
+
+        let ns_present = group
+            .iter()
+            .filter_map(|c| {
+                if let Cell::Solved(n) = c {
+                    Some(n.clone())
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
+        for cell in group {
+            for n in ns_present.iter() {
+                if cell.remove_candidate(*n) {
+                    result = true
+                }
+            }
+        }
+        result
+    }
     for row in grid.iter_mut() {
-        let ns_present = row
-            .iter_mut()
-            .filter_map(|c| {
-                if let Cell::Solved(n) = c {
-                    Some(n.clone())
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for cell in row {
-            for n in ns_present.iter() {
-                if cell.remove_candidate(*n) {
-                    result = true
-                }
-            }
-        }
+        result |= process_group(row.iter_mut().collect_vec());
     }
-
-    // cols
-    for mut col in grid.cols() {
-        let ns_present = col
-            .iter_mut()
-            .filter_map(|c| {
-                if let Cell::Solved(n) = c {
-                    Some(n.clone())
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for cell in col {
-            for n in ns_present.iter() {
-                if cell.remove_candidate(*n) {
-                    result = true
-                }
-            }
-        }
+    for col in grid.cols() {
+        result |= process_group(col);
     }
-
-    // boxes
-    for mut bx in grid.boxes() {
-        let ns_present = bx
-            .iter_mut()
-            .filter_map(|c| {
-                if let Cell::Solved(n) = c {
-                    Some(n.clone())
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for cell in bx {
-            for n in ns_present.iter() {
-                if cell.remove_candidate(*n) {
-                    result = true
-                }
-            }
-        }
+    for bx in grid.boxes() {
+        result |= process_group(bx);
     }
-
     result
 }
 pub fn hidden_singles(grid: &mut Grid) -> bool {
     trace!("Searching for hidden singles");
     let mut result = false;
+
+    fn process_group(group: &mut Vec<&mut Cell>) -> bool {
+        let mut result = false;
+        for i in 0..9 {
+            let cells = group
+                .iter_mut()
+                .filter(|c| {
+                    if let Cell::Unsolved(cands) = c {
+                        return cands[i];
+                    }
+                    false
+                })
+                .collect_vec();
+            if cells.len() == 1 {
+                result = true;
+                for cell in cells {
+                    let mut newcands = [false; 9];
+                    newcands[i] = true;
+                    **cell = Cell::Unsolved(newcands);
+                }
+            }
+        }
+        result
+    }
     for row in grid.iter_mut() {
-        for i in 0..9 {
-            let cells = row
-                .iter_mut()
-                .filter(|c| {
-                    if let Cell::Unsolved(cands) = c {
-                        return cands[i];
-                    }
-                    false
-                })
-                .collect_vec();
-            if cells.len() == 1 {
-                result = true;
-                for cell in cells {
-                    let mut newcands = [false; 9];
-                    newcands[i] = true;
-                    *cell = Cell::Unsolved(newcands);
-                }
-            }
-        }
+        result |= process_group(&mut row.iter_mut().collect_vec());
     }
-
     for mut col in grid.cols() {
-        for i in 0..9 {
-            let cells = col
-                .iter_mut()
-                .filter(|c| {
-                    if let Cell::Unsolved(cands) = c {
-                        return cands[i];
-                    }
-                    false
-                })
-                .collect_vec();
-            if cells.len() == 1 {
-                result = true;
-                for cell in cells {
-                    let mut newcands = [false; 9];
-                    newcands[i] = true;
-                    **cell = Cell::Unsolved(newcands);
-                }
-            }
-        }
+        result |= process_group(&mut col);
     }
-
     for mut bx in grid.boxes() {
-        for i in 0..9 {
-            let cells = bx
-                .iter_mut()
-                .filter(|c| {
-                    if let Cell::Unsolved(cands) = c {
-                        return cands[i];
-                    }
-                    false
-                })
-                .collect_vec();
-            if cells.len() == 1 {
-                result = true;
-                for cell in cells {
-                    let mut newcands = [false; 9];
-                    newcands[i] = true;
-                    **cell = Cell::Unsolved(newcands);
-                }
-            }
-        }
+        result |= process_group(&mut bx);
     }
 
     result
@@ -164,37 +101,10 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
     trace!("Searching for naked tuples");
     let mut result = false;
 
-    for row in grid.0.iter_mut() {
+    fn process_group(group: &mut Vec<&mut Cell>) -> bool {
+        let mut result = false;
         let mut map: HashMap<Cell, usize> = HashMap::new();
-        for cell in row.iter() {
-            if let Some(count) = map.get_mut(cell) {
-                *count += 1;
-            } else {
-                map.insert(*cell, 1);
-            }
-        }
-
-        for id in map.iter().filter_map(|(c, count)| {
-            if c.candidates().len() == *count {
-                Some(c)
-            } else {
-                None
-            }
-        }) {
-            let candidates = id.candidates();
-            for cell in row.iter_mut().filter(|c| *c != id) {
-                for cand in candidates.iter() {
-                    if cell.remove_candidate(*cand) {
-                        result = true;
-                    };
-                }
-            }
-        }
-    }
-
-    for col in grid.cols().iter_mut() {
-        let mut map: HashMap<Cell, usize> = HashMap::new();
-        for cell in col.iter() {
+        for cell in group.iter() {
             if let Some(count) = map.get_mut(cell) {
                 *count += 1;
             } else {
@@ -210,7 +120,7 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
             }
         }) {
             let candidates = id.candidates();
-            for cell in col.iter_mut().filter(|c| **c != id) {
+            for cell in group.iter_mut().filter(|c| **c != id) {
                 for cand in candidates.iter() {
                     if cell.remove_candidate(*cand) {
                         result = true;
@@ -218,33 +128,17 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
                 }
             }
         }
+
+        result
+    }
+    for row in grid.0.iter_mut() {
+        result |= process_group(&mut row.iter_mut().collect_vec());
+    }
+    for col in grid.cols().iter_mut() {
+        result |= process_group(col);
     }
     for bx in grid.boxes().iter_mut() {
-        let mut map: HashMap<Cell, usize> = HashMap::new();
-        for cell in bx.iter() {
-            if let Some(count) = map.get_mut(cell) {
-                *count += 1;
-            } else {
-                map.insert(**cell, 1);
-            }
-        }
-
-        for id in map.iter().filter_map(|(c, count)| {
-            if c.candidates().len() == *count {
-                Some(c)
-            } else {
-                None
-            }
-        }) {
-            let candidates = id.candidates();
-            for cell in bx.iter_mut().filter(|c| **c != id) {
-                for cand in candidates.iter() {
-                    if cell.remove_candidate(*cand) {
-                        result = true;
-                    };
-                }
-            }
-        }
+        result |= process_group(bx);
     }
 
     result
@@ -252,106 +146,49 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
 pub fn hidden_tuples(grid: &mut Grid) -> bool {
     let mut result = false;
 
+    fn process_group(group: &mut Vec<&mut Cell>) -> bool {
+        let mut result = false;
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for cell in group.iter() {
+            for cand in cell.candidates() {
+                if let Some(count) = map.get_mut(&cand) {
+                    *count += 1;
+                } else {
+                    map.insert(cand, 1);
+                }
+            }
+        }
+
+        for len in 2..=4 {
+            let cands = map
+                .iter()
+                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
+                .collect_vec();
+            let mut cells = group
+                .iter_mut()
+                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
+                .collect_vec();
+            if cells.len() == len && cells.len() == cands.len() {
+                for cell in cells.iter_mut() {
+                    for cand in cell.candidates() {
+                        if !cands.contains(&&cand) {
+                            cell.remove_candidate(cand);
+                        }
+                    }
+                }
+                result = true;
+            }
+        }
+        result
+    }
     for row in grid.iter_mut() {
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        for cell in row.iter() {
-            for cand in cell.candidates() {
-                if let Some(count) = map.get_mut(&cand) {
-                    *count += 1;
-                } else {
-                    map.insert(cand, 1);
-                }
-            }
-        }
-
-        for len in 2..=4 {
-            let cands = map
-                .iter()
-                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
-                .collect_vec();
-            let mut cells = row
-                .iter_mut()
-                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
-                .collect_vec();
-            if cells.len() == len && cells.len() == cands.len() {
-                for cell in cells.iter_mut() {
-                    for cand in cell.candidates() {
-                        if !cands.contains(&&cand) {
-                            cell.remove_candidate(cand);
-                        }
-                    }
-                }
-                result = true;
-            }
-        }
+        result |= process_group(&mut row.iter_mut().collect_vec());
     }
-
     for col in grid.cols().iter_mut() {
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        for cell in col.iter() {
-            for cand in cell.candidates() {
-                if let Some(count) = map.get_mut(&cand) {
-                    *count += 1;
-                } else {
-                    map.insert(cand, 1);
-                }
-            }
-        }
-
-        for len in 2..=4 {
-            let cands = map
-                .iter()
-                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
-                .collect_vec();
-            let mut cells = col
-                .iter_mut()
-                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
-                .collect_vec();
-            if cells.len() == len && cells.len() == cands.len() {
-                for cell in cells.iter_mut() {
-                    for cand in cell.candidates() {
-                        if !cands.contains(&&cand) {
-                            cell.remove_candidate(cand);
-                        }
-                    }
-                }
-                result = true;
-            }
-        }
+        result |= process_group(col);
     }
-
     for bx in grid.boxes().iter_mut() {
-        let mut map: HashMap<usize, usize> = HashMap::new();
-        for cell in bx.iter() {
-            for cand in cell.candidates() {
-                if let Some(count) = map.get_mut(&cand) {
-                    *count += 1;
-                } else {
-                    map.insert(cand, 1);
-                }
-            }
-        }
-
-        for len in 2..=4 {
-            let cands = map
-                .iter()
-                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
-                .collect_vec();
-            let mut cells = bx
-                .iter_mut()
-                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
-                .collect_vec();
-            if cells.len() == len && cells.len() == cands.len() {
-                for cell in cells.iter_mut() {
-                    for cand in cell.candidates() {
-                        if !cands.contains(&&cand) {
-                            cell.remove_candidate(cand);
-                        }
-                    }
-                }
-                result = true;
-            }
-        }
+        result |= process_group(bx);
     }
 
     result
