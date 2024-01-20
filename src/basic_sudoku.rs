@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use itertools::Itertools;
 
 use log::trace;
 
@@ -24,7 +26,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
     let mut result = false;
     // rows
     for row in grid.iter_mut() {
-        let ns_present: Vec<_> = row
+        let ns_present = row
             .iter_mut()
             .filter_map(|c| {
                 if let Cell::Solved(n) = c {
@@ -33,7 +35,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
                     None
                 }
             })
-            .collect();
+            .collect_vec();
         for cell in row {
             for n in ns_present.iter() {
                 if cell.remove_candidate(*n) {
@@ -45,7 +47,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
 
     // cols
     for mut col in grid.cols() {
-        let ns_present: Vec<_> = col
+        let ns_present = col
             .iter_mut()
             .filter_map(|c| {
                 if let Cell::Solved(n) = c {
@@ -54,7 +56,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
                     None
                 }
             })
-            .collect();
+            .collect_vec();
         for cell in col {
             for n in ns_present.iter() {
                 if cell.remove_candidate(*n) {
@@ -66,7 +68,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
 
     // boxes
     for mut bx in grid.boxes() {
-        let ns_present: Vec<_> = bx
+        let ns_present = bx
             .iter_mut()
             .filter_map(|c| {
                 if let Cell::Solved(n) = c {
@@ -75,7 +77,7 @@ pub fn basic_elimination(grid: &mut Grid) -> bool {
                     None
                 }
             })
-            .collect();
+            .collect_vec();
         for cell in bx {
             for n in ns_present.iter() {
                 if cell.remove_candidate(*n) {
@@ -92,7 +94,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
     let mut result = false;
     for row in grid.iter_mut() {
         for i in 0..9 {
-            let cells: Vec<_> = row
+            let cells = row
                 .iter_mut()
                 .filter(|c| {
                     if let Cell::Unsolved(cands) = c {
@@ -100,7 +102,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
                     }
                     false
                 })
-                .collect();
+                .collect_vec();
             if cells.len() == 1 {
                 result = true;
                 for cell in cells {
@@ -114,7 +116,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
 
     for mut col in grid.cols() {
         for i in 0..9 {
-            let cells: Vec<_> = col
+            let cells = col
                 .iter_mut()
                 .filter(|c| {
                     if let Cell::Unsolved(cands) = c {
@@ -122,7 +124,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
                     }
                     false
                 })
-                .collect();
+                .collect_vec();
             if cells.len() == 1 {
                 result = true;
                 for cell in cells {
@@ -136,7 +138,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
 
     for mut bx in grid.boxes() {
         for i in 0..9 {
-            let cells: Vec<_> = bx
+            let cells = bx
                 .iter_mut()
                 .filter(|c| {
                     if let Cell::Unsolved(cands) = c {
@@ -144,7 +146,7 @@ pub fn hidden_singles(grid: &mut Grid) -> bool {
                     }
                     false
                 })
-                .collect();
+                .collect_vec();
             if cells.len() == 1 {
                 result = true;
                 for cell in cells {
@@ -247,15 +249,119 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
 
     result
 }
+pub fn hidden_tuples(grid: &mut Grid) -> bool {
+    let mut result = false;
+
+    for row in grid.iter_mut() {
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for cell in row.iter() {
+            for cand in cell.candidates() {
+                if let Some(count) = map.get_mut(&cand) {
+                    *count += 1;
+                } else {
+                    map.insert(cand, 1);
+                }
+            }
+        }
+
+        for len in 2..=4 {
+            let cands = map
+                .iter()
+                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
+                .collect_vec();
+            let mut cells = row
+                .iter_mut()
+                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
+                .collect_vec();
+            if cells.len() == len && cells.len() == cands.len() {
+                for cell in cells.iter_mut() {
+                    for cand in cell.candidates() {
+                        if !cands.contains(&&cand) {
+                            cell.remove_candidate(cand);
+                        }
+                    }
+                }
+                result = true;
+            }
+        }
+    }
+
+    for col in grid.cols().iter_mut() {
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for cell in col.iter() {
+            for cand in cell.candidates() {
+                if let Some(count) = map.get_mut(&cand) {
+                    *count += 1;
+                } else {
+                    map.insert(cand, 1);
+                }
+            }
+        }
+
+        for len in 2..=4 {
+            let cands = map
+                .iter()
+                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
+                .collect_vec();
+            let mut cells = col
+                .iter_mut()
+                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
+                .collect_vec();
+            if cells.len() == len && cells.len() == cands.len() {
+                for cell in cells.iter_mut() {
+                    for cand in cell.candidates() {
+                        if !cands.contains(&&cand) {
+                            cell.remove_candidate(cand);
+                        }
+                    }
+                }
+                result = true;
+            }
+        }
+    }
+
+    for bx in grid.boxes().iter_mut() {
+        let mut map: HashMap<usize, usize> = HashMap::new();
+        for cell in bx.iter() {
+            for cand in cell.candidates() {
+                if let Some(count) = map.get_mut(&cand) {
+                    *count += 1;
+                } else {
+                    map.insert(cand, 1);
+                }
+            }
+        }
+
+        for len in 2..=4 {
+            let cands = map
+                .iter()
+                .filter_map(|(k, v)| if v <= &len { Some(k) } else { None })
+                .collect_vec();
+            let mut cells = bx
+                .iter_mut()
+                .filter(|c| c.candidates().iter().any(|c| cands.contains(&c)))
+                .collect_vec();
+            if cells.len() == len && cells.len() == cands.len() {
+                for cell in cells.iter_mut() {
+                    for cand in cell.candidates() {
+                        if !cands.contains(&&cand) {
+                            cell.remove_candidate(cand);
+                        }
+                    }
+                }
+                result = true;
+            }
+        }
+    }
+
+    result
+}
 
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
 
-    use crate::{
-        basic_sudoku::{basic_elimination, hidden_singles, naked_singles, naked_tuples},
-        Cell, Grid,
-    };
+    use crate::{basic_sudoku::*, Cell, Grid};
     impl Cell {
         fn exact_candidates(&self, candidates: &HashSet<usize>) -> bool {
             if let Cell::Unsolved(c) = self {
@@ -379,5 +485,63 @@ mod test {
             .enumerate()
             .filter_map(|(i, c)| if i == 0 || i == 4 { None } else { Some(c) })
             .all(|c| !c.has_candidate(4) && !c.has_candidate(5)));
+    }
+
+    #[test]
+    fn test_hidden_tuples() {
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
+
+        let row_refs: [*const Cell; 2] = [&grid.0[0][4], &grid.0[0][7]];
+        for cell in grid.0[0].iter_mut() {
+            if row_refs.contains(&(&(*cell) as *const Cell)) {
+                continue;
+            }
+            cell.remove_candidate(0);
+            cell.remove_candidate(1);
+        }
+
+        let col_refs: [*mut Cell; 3] = [&mut grid.0[2][2], &mut grid.0[4][2], &mut grid.0[7][2]];
+        for cell in grid.cols()[2].iter_mut() {
+            if col_refs.contains(&(*cell as *mut Cell)) {
+                continue;
+            }
+            cell.remove_candidate(2);
+            cell.remove_candidate(3);
+            cell.remove_candidate(4);
+        }
+        unsafe {
+            (*col_refs[0]).remove_candidate(3);
+        }
+
+        let box_refs: [*const Cell; 2] = [&grid.0[4][4], &grid.0[5][5]];
+        for cell in grid.boxes()[4].iter_mut() {
+            if box_refs.contains(&(*cell as *const Cell)) {
+                continue;
+            }
+            cell.remove_candidate(5);
+            cell.remove_candidate(6);
+        }
+
+        assert!(hidden_tuples(&mut grid));
+
+        assert!(row_refs
+            .iter()
+            .map(|c| unsafe { **c })
+            .all(|c| c.exact_candidates(&HashSet::from([0, 1]))));
+        assert!(col_refs
+            .iter()
+            .map(|c| unsafe { **c })
+            .enumerate()
+            .all(|(i, c)| c.exact_candidates(
+                &(if i == 0 {
+                    HashSet::from([2, 4])
+                } else {
+                    HashSet::from([2, 3, 4])
+                })
+            )));
+        assert!(box_refs
+            .iter()
+            .map(|c| unsafe { **c })
+            .all(|c| c.exact_candidates(&HashSet::from([5, 6]))));
     }
 }

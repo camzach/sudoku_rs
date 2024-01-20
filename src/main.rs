@@ -8,7 +8,7 @@ mod grid;
 use grid::{Cell, Grid};
 
 use crate::{
-    basic_sudoku::{basic_elimination, hidden_singles, naked_singles, naked_tuples},
+    basic_sudoku::{basic_elimination, hidden_singles, hidden_tuples, naked_singles, naked_tuples},
     chess_strategies::{kings, knights},
     solver::Solver,
 };
@@ -80,6 +80,7 @@ fn main() -> Result<(), ()> {
     }
     solver.add_strategy(hidden_singles);
     solver.add_strategy(naked_tuples);
+    solver.add_strategy(hidden_tuples);
 
     let mut failed = false;
     while !grid.solved() && !failed {
