@@ -145,6 +145,7 @@ pub fn naked_tuples(grid: &mut Grid) -> bool {
 }
 pub fn hidden_tuples(grid: &mut Grid) -> bool {
     let mut result = false;
+    trace!("Searching for hidden tuples");
 
     fn process_group(group: &mut Vec<&mut Cell>) -> bool {
         let mut result = false;
