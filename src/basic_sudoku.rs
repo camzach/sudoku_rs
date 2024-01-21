@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 
@@ -194,6 +194,87 @@ pub fn hidden_tuples(grid: &mut Grid) -> bool {
 
     result
 }
+pub fn pointing_tuples(grid: &mut Grid) -> bool {
+    let mut result = false;
+
+    // cand -> (row/col, box in row/col)
+    let mut row_clears: HashMap<usize, HashSet<(usize, usize)>> = HashMap::new();
+    let mut col_clears: HashMap<usize, HashSet<(usize, usize)>> = HashMap::new();
+
+    for (i_bx, bx) in grid.boxes().iter().enumerate() {
+        let box_row = i_bx / 3;
+        let box_col = i_bx % 3;
+        let mut row_map: HashMap<usize, HashSet<usize>> = HashMap::new();
+        let mut col_map: HashMap<usize, HashSet<usize>> = HashMap::new();
+        for (i_cell, cell) in bx.iter().enumerate() {
+            for cand in cell.candidates() {
+                if let Some(vec) = row_map.get_mut(&cand) {
+                    vec.insert(i_cell / 3);
+                } else {
+                    row_map.insert(cand, HashSet::from([i_cell / 3]));
+                }
+                if let Some(vec) = col_map.get_mut(&cand) {
+                    vec.insert(i_cell % 3);
+                } else {
+                    col_map.insert(cand, HashSet::from([i_cell % 3]));
+                }
+            }
+        }
+        for (k, row_in_box) in row_map.iter().filter_map(|(k, v)| {
+            if v.len() == 1 {
+                v.iter().last().map(|v| (k, v))
+            } else {
+                None
+            }
+        }) {
+            let overall_row = row_in_box + (box_row * 3);
+            let tuple = (overall_row, box_col);
+            if let Some(set) = row_clears.get_mut(k) {
+                set.insert(tuple);
+            } else {
+                row_clears.insert(*k, HashSet::from([tuple]));
+            }
+        }
+        for (k, col_in_box) in col_map.iter().filter_map(|(k, v)| {
+            if v.len() == 1 {
+                v.iter().last().map(|v| (k, v))
+            } else {
+                None
+            }
+        }) {
+            let overall_col = col_in_box + (box_col * 3);
+            let tuple = (overall_col, box_row);
+            if let Some(set) = col_clears.get_mut(k) {
+                set.insert(tuple);
+            } else {
+                col_clears.insert(*k, HashSet::from([tuple]));
+            }
+        }
+    }
+
+    for (cand, set) in row_clears {
+        for (row, box_col) in set {
+            for (i, cell) in grid.0[row].iter_mut().enumerate() {
+                if i / 3 != box_col {
+                    cell.remove_candidate(cand);
+                    result = true;
+                }
+            }
+        }
+    }
+    for (cand, set) in col_clears {
+        for (col, box_row) in set {
+            for (i, cell) in grid.cols().get_mut(col).unwrap().iter_mut().enumerate() {
+                if i / 3 != box_row {
+                    cell.remove_candidate(cand);
+                    result = true;
+                }
+            }
+        }
+    }
+
+    result
+}
 
 #[cfg(test)]
 mod test {
@@ -381,5 +462,32 @@ mod test {
             .iter()
             .map(|c| unsafe { **c })
             .all(|c| c.exact_candidates(&HashSet::from([5, 6]))));
+    }
+
+    #[test]
+    fn test_pointing_tuples() {
+        let mut grid = Grid([[Cell::default(); 9]; 9]);
+
+        let row_refs: [*const Cell; 2] = [&grid.0[0][0], &grid.0[0][1]];
+        let col_refs: [*const Cell; 3] = [&grid.0[0][2], &grid.0[1][2], &grid.0[2][2]];
+        for cell in grid.boxes()[0].iter_mut() {
+            let raw_pointer = *cell as *const Cell;
+            if !row_refs.contains(&raw_pointer) {
+                cell.remove_candidate(0);
+            }
+            if !col_refs.contains(&raw_pointer) {
+                cell.remove_candidate(1);
+            }
+        }
+
+        assert!(pointing_tuples(&mut grid));
+
+        assert!(grid.0[0].iter().all(|cell| {
+            row_refs.contains(&(cell as *const Cell)) == cell.candidates().contains(&0)
+        }));
+
+        assert!(grid.cols()[2].iter().all(
+            |cell| col_refs.contains(&(*cell as *const Cell)) == cell.candidates().contains(&1)
+        ))
     }
 }
